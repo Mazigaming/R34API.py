@@ -1,268 +1,125 @@
 import requests
 import xml.etree.ElementTree as ET
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageSequence
 from io import BytesIO
 import random
 import os
 import tkinter as tk
-from tkinter import messagebox, simpledialog, filedialog
+from tkinter import messagebox, simpledialog
 
-
-class ImageViewerApp:
+class Viewer:
     def __init__(self, root):
         self.root = root
-        self.root.title("Image Viewer")
-        self.root.config(bg="#f1c0a7")  # bg kolor
-
-        # Vars
-        self.images = []
-        self.current_index = 0
-        self.current_image_data = None  # Save raw img data
-
-        # Set window rozmiar
         self.root.geometry("900x700")
-        self.root.resizable(True, True)
+        self.imgs, self.curr, self.data = [], 0, None
+        self.setup_ui()
+        self.setup_bindings()
 
-        # Center 
-        self.center_window()
+    def setup_ui(self):
+        frm = tk.Frame(self.root, bg="#f1c0a7")
+        frm.pack(expand=True)
+        tk.Label(frm, text="Viewer", font=("Comic Sans MS", 18, 'bold'), bg="#f1c0a7").pack(pady=20)
+        self.rate = tk.Scale(frm, from_=0, to=10, orient=tk.HORIZONTAL, label="Min Rating")
+        self.rate.pack()
+        self.img_lbl = tk.Label(frm, bg="#f1c0a7")
+        self.img_lbl.pack(pady=20)
+        btn_frm = tk.Frame(frm, bg="#f1c0a7")
+        btn_frm.pack()
+        self.prev_btn = tk.Button(btn_frm, text="Prev", command=self.show_prev, state=tk.DISABLED)
+        self.prev_btn.grid(row=0, column=0, padx=5)
+        self.next_btn = tk.Button(btn_frm, text="Next", command=self.show_next, state=tk.DISABLED)
+        self.next_btn.grid(row=0, column=1, padx=5)
+        tk.Button(frm, text="Fetch", command=self.fetch_imgs).pack(pady=10)
+        self.save_btn = tk.Button(frm, text="Save", command=self.save_img, state=tk.DISABLED)
+        self.save_btn.pack()
 
-        #  widgets
-        self.main_frame = tk.Frame(self.root, bg="#f1c0a7")
-        self.main_frame.place(relx=0.5, rely=0.5, anchor="center")  # Center the frame
+    def setup_bindings(self):
+        self.root.bind("<Left>", self.show_prev)
+        self.root.bind("<Right>", self.show_next)
+        self.root.bind("<f>", lambda e: self.fetch_imgs())
+        self.root.bind("<Control-s>", lambda e: self.save_img())
 
-        # GUI set up 
-        self._setup_gui()
-
-        # ctrl + s bind
-        self.root.bind("<Control-s>", self.save_current_image)
-
-    def center_window(self):
-        """Center the window on the screen."""
-        window_width = 900
-        window_height = 700
-
-        screen_width = self.root.winfo_screenwidth()
-        screen_height = self.root.winfo_screenheight()
-
-        position_top = int(screen_height / 2 - window_height / 2)
-        position_left = int(screen_width / 2 - window_width / 2)
-
-        self.root.geometry(f'{window_width}x{window_height}+{position_left}+{position_top}')
-
-    def _setup_gui(self):
-        """Todo: upgrade gui (estetycznie)"""
-        
-        # Title l
-        self.author_label = tk.Label(
-            self.main_frame, text="Welcome to Image Viewer!", font=("Comic Sans MS", 18, 'bold'), bg="#f1c0a7", fg="#800000"
-        )
-        self.author_label.grid(row=0, column=0, columnspan=3, pady=20)
-
-        # Rating 
-        self.rating_label = tk.Label(
-            self.main_frame, text="Minimum Rating:", font=("Arial", 12), bg="#f1c0a7", fg="#800000"
-        )
-        self.rating_label.grid(row=1, column=0, padx=15, sticky="w")
-
-        self.rating_slider = tk.Scale(
-            self.main_frame, from_=0, to=10, orient=tk.HORIZONTAL, sliderlength=30, length=400,
-            bg="#fff", fg="#800000", font=("Arial", 12)
-        )
-        self.rating_slider.grid(row=1, column=1, padx=15)
-
-        # Frame 
-        self.image_frame = tk.Frame(self.main_frame, bg="#f1c0a7")
-        self.image_frame.grid(row=2, column=0, columnspan=3, pady=30)
-
-        # Previous 
-        self.prev_button = tk.Button(
-            self.image_frame, text="Previous", command=self.show_previous_image, state=tk.DISABLED,
-            font=("Arial", 12, 'bold'), bg="#ff7f7f", fg="#fff", relief="solid", height=2, width=10
-        )
-        self.prev_button.grid(row=0, column=0, padx=10)
-
-        # Image display
-        self.image_label = tk.Label(self.image_frame, bg="#f1c0a7")
-        self.image_label.grid(row=0, column=1, padx=20)
-
-        # Next 
-        self.next_button = tk.Button(
-            self.image_frame, text="Next", command=self.show_next_image, state=tk.DISABLED,
-            font=("Arial", 12, 'bold'), bg="#ff7f7f", fg="#fff", relief="solid", height=2, width=10
-        )
-        self.next_button.grid(row=0, column=2, padx=10)
-
-        # Fetch 
-        self.fetch_button = tk.Button(
-            self.main_frame, text="Fetch Images", command=self.fetch_and_display_images,
-            font=("Arial", 14, 'bold'), bg="#ff4040", fg="#fff", relief="solid", height=2, width=15
-        )
-        self.fetch_button.grid(row=3, column=0, padx=10, pady=10, sticky="ew")  # Left-aligned
-
-        # Save 
-        self.save_button = tk.Button(
-            self.main_frame, text="Save Image", command=self.save_current_image, state=tk.DISABLED,
-            font=("Arial", 14, 'bold'), bg="#4CAF50", fg="#fff", relief="solid", height=2, width=15
-        )
-        self.save_button.grid(row=3, column=2, padx=10, pady=10, sticky="ew")  
-
-        
-        self.main_frame.update_idletasks()
-
-    def fetch_images_by_tag(self, tag, total_limit=100):
-        """Fetch przez tagi"""
-        api_url = "https://api.rule34.xxx/index.php?page=dapi&s=post&q=index"
-        images = []
-        page = 0
-        per_page_limit = 100  # Rule34 limit to 1000 zmniejszone dla lepszej optymalnosci
-
-        while len(images) < total_limit:
-            params = {
-                'limit': per_page_limit,
-                'pid': page,
-                'tags': tag  # tag filter
-            }
-
+    def fetch_api(self, tags, limit=100):
+        url = "https://api.rule34.xxx/index.php?page=dapi&s=post&q=index"
+        res, page = [], 0
+        tags_query = '+'.join(tags)  # Join multiple tags with '+'
+        while len(res) < limit:
             try:
-                response = requests.get(api_url, params=params)
-                response.raise_for_status()
-
-                root = ET.fromstring(response.content)
-                posts = root.findall("post")
-
-                if not posts:  # no img dostepne
-                    break
-
-                # Extract img data!
-                for post in posts:
-                    if len(images) >= total_limit:
-                        break
-                    image_url = post.get("file_url")
-                    author = post.get("creator_id", "Unknown")
-                    score = int(post.get("score", 0))
-
-                    if image_url:
-                        images.append((image_url, author, score))
-
+                r = requests.get(url, params={'limit': 100, 'pid': page, 'tags': tags_query})
+                r.raise_for_status()
+                for post in ET.fromstring(r.content).findall("post"):
+                    if len(res) >= limit: break
+                    if img_url := post.get("file_url"): res.append((img_url, int(post.get("score", 0))))
                 page += 1
-
-            except requests.RequestException as e:
-                messagebox.showerror("Error", f"Network error: {e}")
+            except Exception as e:
+                print(f"Error fetching API: {e}")
                 break
-            except ET.ParseError:
-                messagebox.showerror("Error", "parase Api nie zadziałał")
-                break
+        return res
 
-        return images
+    def fetch_imgs(self):
+        tags_input = simpledialog.askstring("Tags", "Enter tags ")
+        if not tags_input: return
+        tags = [tag.strip() for tag in tags_input.split(',')]  # Split and clean tags
+        count = simpledialog.askinteger("Count", "How many images?", minvalue=1, maxvalue=100)
+        if not count: return
+        self.imgs = [img for img in self.fetch_api(tags, 1000) if img[1] >= self.rate.get()]
+        random.shuffle(self.imgs)
+        self.imgs = self.imgs[:count]
+        self.curr = 0
+        if self.imgs: self.show_img()
 
-    def fetch_and_display_images(self):
-        """Fetch and display img na bazie"""
-        # Get the tag from the user
-        tag = simpledialog.askstring("Daj tag", "daj tag(my fav 'bondage,mommy asmr,sigma')").strip()
-
-        if not tag:
-            messagebox.showerror("Daj tag error", "Dobry tag ale go nie ma.")
-            return
-
+    def show_img(self):
+        if not self.imgs: return
         try:
-            limit = simpledialog.askinteger("Liczba obrazków", "Ile potrzeba do goonowania?", minvalue=1, maxvalue=1000)
-            if not limit:
-                return  # Cancer f usr
-        except ValueError:
-            messagebox.showerror("Retard", "debilu daj pomiedzy 1-1000 anie jakies misz masz")
-            return
+            r = requests.get(self.imgs[self.curr][0])
+            r.raise_for_status()
+            content_type = r.headers['Content-Type']
 
-        min_score = self.rating_slider.get()
-        self.images = self.fetch_images_by_tag(tag, total_limit=1000)  # Fetch obrazki
-        # Filter obrazku
-        self.images = [img for img in self.images if img[2] >= min_score]  #filtruje ci rating
-
-        # Shuffle 
-        random.shuffle(self.images)
-
-        # Limit obrazków
-        self.images = self.images[:limit]
-
-        # display 1st
-        if self.images:
-            self.show_image(self.current_index)
-            self.update_buttons()
-        else:
-            messagebox.showinfo("ni ma obrazu", "Ni ma tego tagu goonerze")
-
-    def show_image(self, index):
-        """display specialnego indexu"""
-        try:
-            image_url, author, score = self.images[index]
-
-            # Fetch i display
-            response = requests.get(image_url)
-            response.raise_for_status()
-            self.current_image_data = response.content  # Save raw img
-
-            img = Image.open(BytesIO(self.current_image_data))
-            img.thumbnail((600, 600))  # Resize dla thumbnail
-            img_tk = ImageTk.PhotoImage(img)
-
-            self.image_label.configure(image=img_tk)
-            self.image_label.image = img_tk  # Optimize img ref
-
-            self.author_label.configure(text=f"By: {author} | Rating: {score}")
-            self.save_button.config(state=tk.NORMAL)  # save img
+            if 'image' in content_type:
+                self.display_image(r.content)
+            elif 'gif' in content_type:
+                self.display_gif(r.content)
+            else:
+                self.img_lbl.config(text="Unsupported file format")
         except Exception as e:
-            messagebox.showerror("Error", f"TO by nic nie dało: {e}")
+            messagebox.showerror("Error", f"Failed to load image: {e}")
 
-    def save_current_image(self, event=None):
-        """zapis obrazu"""
-        if not self.current_image_data:
-            messagebox.showwarning("nie ma obrazu", "No imga nie ma do zapisu ")
-            return
+    def display_image(self, content):
+        self.data = content
+        img = Image.open(BytesIO(self.data))
+        img.thumbnail((600, 600))
+        img_tk = ImageTk.PhotoImage(img)
+        self.img_lbl.config(image=img_tk)
+        self.img_lbl.image = img_tk
+        self.save_btn.config(state=tk.NORMAL)
+        self.prev_btn.config(state=tk.NORMAL if self.curr > 0 else tk.DISABLED)
+        self.next_btn.config(state=tk.NORMAL if self.curr < len(self.imgs) - 1 else tk.DISABLED)
 
-        # nowy folder
-        save_folder = os.path.join(os.path.expanduser("~"), "GooningFolder")
-        if not os.path.exists(save_folder):
-            os.makedirs(save_folder)
+    def display_gif(self, content):
+        self.data = content
+        gif = Image.open(BytesIO(self.data))
+        frames = [ImageTk.PhotoImage(frame.copy()) for frame in ImageSequence.Iterator(gif)]
+        self.animate_gif(frames)
 
-        # uniq file nazwa nigg
-        save_path = os.path.join(save_folder, f"image_{self.current_index+1}.png")
+    def animate_gif(self, frames, idx=0):
+        self.img_lbl.config(image=frames[idx])
+        self.img_lbl.image = frames[idx]
+        self.root.after(100, self.animate_gif, frames, (idx + 1) % len(frames))
 
-        try:
-            with open(save_path, "wb") as file:
-                file.write(self.current_image_data)
+    def save_img(self, event=None):
+        if not self.data: return
+        save_dir = os.path.expanduser("~/Viewer")
+        os.makedirs(save_dir, exist_ok=True)
+        with open(os.path.join(save_dir, f"img_{self.curr + 1}.png"), "wb") as f:
+            f.write(self.data)
 
-            messagebox.showinfo("Success", f"Image saved to {save_path}")
+    def show_prev(self, event=None):
+        if self.curr > 0: self.curr -= 1; self.show_img()
 
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to save image: {e}")
+    def show_next(self, event=None):
+        if self.curr < len(self.imgs) - 1: self.curr += 1; self.show_img()
 
-    def show_previous_image(self):
-        """poprzedni"""
-        if self.current_index > 0:
-            self.current_index -= 1
-            self.show_image(self.current_index)
-            self.update_buttons()
-
-    def show_next_image(self):
-        """next"""
-        if self.current_index < len(self.images) - 1:
-            self.current_index += 1
-            self.show_image(self.current_index)
-            self.update_buttons()
-
-    def update_buttons(self):
-        """navigacja ."""
-        if self.current_index == 0:
-            self.prev_button.config(state=tk.DISABLED)
-        else:
-            self.prev_button.config(state=tk.NORMAL)
-
-        if self.current_index == len(self.images) - 1:
-            self.next_button.config(state=tk.DISABLED)
-        else:
-            self.next_button.config(state=tk.NORMAL)
-
-
-# Okienko <3
-root = tk.Tk()
-app = ImageViewerApp(root)
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    Viewer(root)
+    root.mainloop()
